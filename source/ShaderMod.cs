@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text.Json;
 using ImGuiNET;
 using RecompOne.Runtime.Hle;
+using RecompOne.Runtime.Host;
 using RecompOne.Runtime.Modding;
 
 //shader mod, it is like minecraft, you provice an folder with the shader and it applies it, the shader needs a settings.json
@@ -53,7 +54,7 @@ public class ShaderMod : IMod
         ImGui.TextUnformatted("Shader");
         ImGui.SameLine();
 
-        ImGui.SetNextItemWidth(200f);
+        ImGui.SetNextItemWidth(200f * HostWindow.DpiScale);
         if (ImGui.BeginCombo("##shader", current?.Name ?? "None"))
         {
             if (ImGui.Selectable("None", current == null)) Select("");
