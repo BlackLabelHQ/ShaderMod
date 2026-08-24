@@ -1,0 +1,9 @@
+{
+    "id": "shaders",
+    "name": "Shaders",
+    "firstPartyMod": true,
+    "version": "0.1a",
+    "author": "flaffy",
+    "description": "add shader support",
+    "dependencies": []
+}

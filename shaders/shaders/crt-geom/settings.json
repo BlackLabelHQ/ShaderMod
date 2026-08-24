@@ -1,0 +1,149 @@
+{
+    "name": "CRT Geom",
+    "author": "cgwg, Themaister, DOLLS",
+    "description": "this was adapted from the libretro glsl-shaders crt-geom",
+    "license": "GPL-2.0-or-later",
+    "fragment": "crt-geom.frag",
+
+    //is this all the params?
+    "parameters": [
+        {
+            "uniform": "CRTgamma",
+            "name": "Target Gamma",
+            "default": 2.4,
+            "min": 0.1,
+            "max": 5.0,
+            "step": 0.1
+        },
+        {
+            "uniform": "INV",
+            "name": "Inverse Gamma/CRT-Geom Gamma out",
+            "type": "bool",
+            "default": 0.0
+        },
+        {
+            "uniform": "monitorgamma",
+            "name": "Monitor Gamma",
+            "default": 2.2,
+            "min": 0.1,
+            "max": 5.0,
+            "step": 0.1
+        },
+        {
+            "uniform": "d",
+            "name": "Distance",
+            "default": 1.6,
+            "min": 0.1,
+            "max": 3.0,
+            "step": 0.1
+        },
+        {
+            "uniform": "CURVATURE",
+            "name": "Curvature Toggle",
+            "type": "bool",
+            "default": 1.0
+        },
+        {
+            "uniform": "R",
+            "name": "Curvature Radius",
+            "default": 2.0,
+            "min": 0.1,
+            "max": 10.0,
+            "step": 0.1
+        },
+        {
+            "uniform": "cornersize",
+            "name": "Corner Size",
+            "default": 0.03,
+            "min": 0.001,
+            "max": 1.0,
+            "step": 0.005
+        },
+        {
+            "uniform": "cornersmooth",
+            "name": "Corner Smoothness",
+            "default": 1000.0,
+            "min": 80.0,
+            "max": 2000.0,
+            "step": 100.0
+        },
+        {
+            "uniform": "x_tilt",
+            "name": "Horizontal Tilt",
+            "default": 0.0,
+            "min": -0.5,
+            "max": 0.5,
+            "step": 0.05
+        },
+        {
+            "uniform": "y_tilt",
+            "name": "Vertical Tilt",
+            "default": 0.0,
+            "min": -0.5,
+            "max": 0.5,
+            "step": 0.05
+        },
+        {
+            "uniform": "overscan_x",
+            "name": "Horiz. Overscan %",
+            "default": 100.0,
+            "min": -125.0,
+            "max": 125.0,
+            "step": 1.0
+        },
+        {
+            "uniform": "overscan_y",
+            "name": "Vert. Overscan %",
+            "default": 100.0,
+            "min": -125.0,
+            "max": 125.0,
+            "step": 1.0
+        },
+        {
+            "uniform": "DOTMASK",
+            "name": "Dot Mask Strength",
+            "default": 0.3,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.1
+        },
+        {
+            "uniform": "SHARPER",
+            "name": "Sharpness",
+            "default": 1.0,
+            "min": 1.0,
+            "max": 3.0,
+            "step": 1.0
+        },
+        {
+            "uniform": "scanline_weight",
+            "name": "Scanline Weight",
+            "default": 0.3,
+            "min": 0.1,
+            "max": 0.5,
+            "step": 0.05
+        },
+        {
+            "uniform": "lum",
+            "name": "Luminance",
+            "default": 0.0,
+            "min": 0.0,
+            "max": 1.0,
+            "step": 0.01
+        },
+        {
+            "uniform": "interlace_detect",
+            "name": "Interlacing Simulation",
+            "type": "bool",
+            "default": 1.0
+        },
+        {
+            "uniform": "SATURATION",
+            "name": "Saturation",
+            "default": 1.0,
+            "min": 0.0,
+            "max": 2.0,
+            "step": 0.05
+        }
+    ]
+}
