@@ -1,198 +1,196 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
-using System.Text.Json;
 using ImGuiNET;
+using RecompOne.Runtime.Config;
 using RecompOne.Runtime.Hle;
+using RecompOne.Runtime.Host.Window;
 using RecompOne.Runtime.Modding;
 
-//shader mod, it is like minecraft, you provice an folder with the shader and it applies it, the shader needs a settings.json
 //this is not sotn specific this works with any recomp powered by recompone in theory
-//this also includes a simple port of crt-geom(because i love this shader), credits to the original creators of it!
-
-
-//shader config
-public sealed class ShaderEntry
-{
-    public string Id = "";
-    public string Name = "";
-    public string Author = "";
-    public string Description = "";
-    public string Source = "";
-    public string Path = "";
-    public readonly Dictionary<string, float> Params = new(StringComparer.Ordinal);
-}
 
 public class ShaderMod : IMod
 {
-    private const string ModId = "shaders";
-    private const string Prefix = "mods.shaders.";
-    private const string ShadersDir = "shaders";
+    internal const string ModId = "shaders";
+    internal const string Prefix = "mods.shaders.";
+    internal const string DefaultRepository = "https://github.com/libretro/slang-shaders";
+    private const string MenuKey = "menu.shaders";
 
-    private readonly List<ShaderEntry> shaders = new();
-    private string selected = "";
+    internal ShaderLibrary Library = null!;
+    internal ShaderRepository Repository = null!;
+    private ShadersPopup? popup;
+    private string repositoryInput = "";
+    private string branchInput = "";
+
+    internal string Selected { get; private set; } = "";
 
     public void OnLoad()
     {
-        Discover();
-        selected = RecompOne.Runtime.Runtime.View.GetString(Prefix + "selected", "");
-        Apply(selected);
+        var source = ModLoader.LoadedMods.FirstOrDefault(m => m.Id == ModId)?.SourcePath ?? Path.GetFullPath(Path.Combine("mods", ModId));
+        LoadStrings(source);
+
+        var root = Directory.Exists(source) ? source : Path.Combine(Path.GetDirectoryName(source) ?? "", ModId);
+        Library = new ShaderLibrary(Path.Combine(root, "shaders"));
+        Repository = new ShaderRepository(Library);
+
+        repositoryInput = Settings.Get(Prefix + "repository", DefaultRepository);
+        branchInput = Settings.Get(Prefix + "branch", "");
+        Repository.Configure(repositoryInput, branchInput);
+
+        PostFx.NativeInput = Settings.Get(Prefix + "native", true);
+        Library.Refresh();
+        Apply(Settings.Get(Prefix + "selected", ""));
+
+        popup = new ShadersPopup(this);
+        PopupManager.Register(popup);
+        MenuRegistry.BarItem(MenuKey, popup.Open).After("menu.mods");
     }
 
     public void OnUnload()
     {
+        MenuRegistry.Remove(MenuKey);
+        if (popup != null) PopupManager.Unregister(popup);
+        popup = null;
+        Repository.Cancel();
         PostFx.Clear();
     }
 
-
     public void DrawSettings()
     {
-        var current = Current();
+        ImGui.SetNextItemWidth(320f);
+        ImGui.InputText(Localization.T("shaders.repository"), ref repositoryInput, 512);
+        if (ImGui.IsItemDeactivatedAfterEdit()) SaveRepository();
+        SettingsWidgets.Hint("shaders.repository_hint");
 
-        ImGui.TextUnformatted("Shader");
-        ImGui.SameLine();
+        ImGui.SetNextItemWidth(320f);
+        ImGui.InputTextWithHint(Localization.T("shaders.branch"), "HEAD", ref branchInput, 128);
+        if (ImGui.IsItemDeactivatedAfterEdit()) SaveRepository();
+        SettingsWidgets.Hint("shaders.branch_hint");
 
-        ImGui.SetNextItemWidth(200f);
-        if (ImGui.BeginCombo("##shader", current?.Name ?? "None"))
+        if (!ShaderRepository.TryParse(repositoryInput, out _, out _))
+            ImGui.TextColored(new System.Numerics.Vector4(1f, 0.4f, 0.4f, 1f), Localization.T("shaders.bad_repository"));
+
+        if (ImGui.Button(Localization.T("shaders.default_repository")))
         {
-            if (ImGui.Selectable("None", current == null)) Select("");
-            foreach (var s in shaders)
-                if (ImGui.Selectable(s.Name, current != null && current.Id == s.Id)) Select(s.Id);
-            ImGui.EndCombo();
+            repositoryInput = DefaultRepository;
+            branchInput = "";
+            SaveRepository();
         }
 
-        ImGui.SameLine();
-        if (ImGui.Button("Reload")) Reload();
-        ImGui.SameLine();
-        if (ImGui.Button("Rescan")) { Discover(); Apply(selected); }
-
-        if (shaders.Count == 0)
-            ImGui.TextWrapped($"no shaders was found put a shader folder into the mod's {ShadersDir}/ folder and press rescan!");
-
-        if (current != null)
-        {
-            if (!string.IsNullOrWhiteSpace(current.Author)) ImGui.TextDisabled($"by {current.Author}");
-            if (!string.IsNullOrWhiteSpace(current.Description)) ImGui.TextWrapped(current.Description);
-        }
-
-        if (PostFx.Error is { } err)
-        {
-            Console.WriteLine($"[Shader] Shader failed to compile: {err}");
-            ImGui.Separator();
-            ImGui.TextColored(new System.Numerics.Vector4(1f, 0.4f, 0.4f, 1f), "Shader failed to compile:");
-            ImGui.TextWrapped(err);
-        }
+        ImGui.Spacing();
+        if (ImGui.Button(FontSet.With(FontSet.FolderOpen, Localization.T("shaders.open_folder")))) OpenFolder();
     }
 
-    private ShaderEntry? Current() => shaders.FirstOrDefault(s => s.Id == selected);
-
-    private void Select(string id)
+    internal void SetNative(bool native)
     {
-        selected = id;
-        RecompOne.Runtime.Runtime.View.SetString(Prefix + "selected", id);
-        RecompOne.Runtime.Runtime.SaveView();
-        Apply(id);
+        PostFx.NativeInput = native;
+        Settings.Set(Prefix + "native", native);
     }
 
-    private void Reload()
+    private void SaveRepository()
     {
-        Discover();
-        Apply(selected);
+        repositoryInput = repositoryInput.Trim();
+        branchInput = branchInput.Trim();
+        Settings.Set(Prefix + "repository", repositoryInput);
+        Settings.Set(Prefix + "branch", branchInput);
+        Repository.Configure(repositoryInput, branchInput);
     }
 
-    private void Apply(string id)
+    internal void Apply(string relative)
     {
-        var entry = shaders.FirstOrDefault(s => s.Id == id);
-        if (entry == null)
+        Selected = relative;
+        Settings.Set(Prefix + "selected", relative);
+
+        if (string.IsNullOrEmpty(relative) || !File.Exists(Library.FullPath(relative)))
         {
             PostFx.Clear();
             return;
         }
 
-        PostFx.Set(entry.Source, entry.Name);
-        if (entry.Params.Count > 0) PostFx.SetParams(entry.Params);
+        if (PostFx.Load(Library.FullPath(relative))) PostFx.SetParams(SavedParams(relative));
+        else Console.Error.WriteLine($"[Shaders] {relative}: {PostFx.Error}");
     }
 
-    private void Discover()
+    internal void Reload()
     {
-        shaders.Clear();
-
-        string? root = ModLoader.LoadedMods.FirstOrDefault(m => m.Id == ModId)?.SourcePath;
-        if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) return;
-
-        string dir = System.IO.Path.Combine(root, ShadersDir);
-        if (!Directory.Exists(dir)) return;
-
-        foreach (var folder in Directory.EnumerateDirectories(dir))
-        {
-            try
-            {
-                var entry = Read(folder);
-                if (entry != null) shaders.Add(entry);
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine($"[Shaders] fail to read {System.IO.Path.GetFileName(folder)}: {ex.Message}");
-            }
-        }
-
-        shaders.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        Library.Refresh();
+        Apply(Selected);
     }
 
-    private ShaderEntry? Read(string folder)
+    internal void SetParam(SlangParameter parameter, float value)
     {
-        string id = System.IO.Path.GetFileName(folder);
-        var entry = new ShaderEntry { Id = id, Name = id, Path = folder };
+        PostFx.SetParam(parameter.Name, value);
+        var saved = SavedParams(Selected);
+        if (value == parameter.Default) saved.Remove(parameter.Name);
+        else saved[parameter.Name] = value;
+        SaveParams(saved);
+    }
 
-        string? fragName = null;
-        string settingsPath = System.IO.Path.Combine(folder, "settings.json");
+    internal void ResetParams()
+    {
+        PostFx.ResetParams();
+        Settings.Remove(ParamsKey(Selected));
+    }
 
-        if (File.Exists(settingsPath))
+    internal void Remove(string relative)
+    {
+        Settings.Remove(ParamsKey(relative));
+        Library.Remove(relative);
+        if (relative == Selected) Apply("");
+    }
+
+    private Dictionary<string, float> SavedParams(string relative)
+    {
+        return Settings.Get(ParamsKey(relative), new Dictionary<string, float>(StringComparer.Ordinal));
+    }
+
+    private void SaveParams(Dictionary<string, float> values)
+    {
+        if (values.Count == 0) Settings.Remove(ParamsKey(Selected));
+        else Settings.Set(ParamsKey(Selected), values);
+    }
+
+    private static string ParamsKey(string relative)
+    {
+        return Prefix + "params." + relative;
+    }
+
+    internal void OpenFolder()
+    {
+        try
         {
-            using var doc = JsonDocument.Parse(File.ReadAllText(settingsPath), new JsonDocumentOptions
-            {
-                CommentHandling = JsonCommentHandling.Skip,
-                AllowTrailingCommas = true,
-            });
-            var r = doc.RootElement;
+            Directory.CreateDirectory(Library.Root);
+            Process.Start(new ProcessStartInfo(Library.Root) { UseShellExecute = true });
+        }
+        catch (Exception e)
+        {
+            Console.Error.WriteLine($"[Shaders] fail to open the shaders folder: {e.Message}");
+        }
+    }
 
-            if (r.TryGetProperty("name", out var n) && n.GetString() is { Length: > 0 } name) entry.Name = name;
-            if (r.TryGetProperty("author", out var a)) entry.Author = a.GetString() ?? "";
-            if (r.TryGetProperty("description", out var d)) entry.Description = d.GetString() ?? "";
-            if (r.TryGetProperty("fragment", out var f)) fragName = f.GetString();
-
-            if (r.TryGetProperty("parameters", out var ps) && ps.ValueKind == JsonValueKind.Array) //load params
+    private static void LoadStrings(string source)
+    {
+        try
+        {
+            if (Directory.Exists(source))
             {
-                foreach (var p in ps.EnumerateArray())
-                {
-                    if (!p.TryGetProperty("uniform", out var u) || u.GetString() is not { Length: > 0 } uniform) continue;
-                    float value = 0f;
-                    if (p.TryGetProperty("value", out var v) && v.ValueKind == JsonValueKind.Number) value = v.GetSingle();
-                    else if (p.TryGetProperty("default", out var dv) && dv.ValueKind == JsonValueKind.Number) value = dv.GetSingle();
-                    else continue;
-                    entry.Params[uniform] = value;
-                }
+                var path = Path.Combine(source, "languages.json");
+                if (File.Exists(path)) Localization.Merge(File.ReadAllText(path));
+                return;
             }
-        }
 
-        string? fragPath = null;
-        if (!string.IsNullOrWhiteSpace(fragName))
+            using var zip = ZipFile.OpenRead(source);
+            var entry = zip.GetEntry("languages.json");
+            if (entry == null) return;
+            using var reader = new StreamReader(entry.Open());
+            Localization.Merge(reader.ReadToEnd());
+        }
+        catch (Exception e)
         {
-            string candidate = System.IO.Path.Combine(folder, fragName);
-            if (File.Exists(candidate)) fragPath = candidate;
-            else Console.Error.WriteLine($"[Shaders] {id}: fragment {fragName} not found");
+            Console.Error.WriteLine($"[Shaders] failed to load strings: {e.Message}");
         }
-
-        fragPath ??= Directory.EnumerateFiles(folder, "*.frag").FirstOrDefault() ?? Directory.EnumerateFiles(folder, "*.glsl").FirstOrDefault();
-
-        if (fragPath == null)
-        {
-            Console.Error.WriteLine($"[Shaders] {id} has no fragment shader");
-            return null;
-        }
-
-        entry.Source = File.ReadAllText(fragPath);
-        return entry;
     }
 }
